@@ -1,4 +1,5 @@
 const {
+  DropdownComponent,
   ItemView,
   Modal,
   Notice,
@@ -610,8 +611,8 @@ class DiarySidebarView extends ItemView {
     const today = new Date();
     this.currentYear = today.getFullYear();
     this.currentMonth = today.getMonth() + 1;
-    this.yearlyStatsOpen = false;
     this.onThisDayOpen = true;
+    this.selectedYear = null;
   }
 
   getViewType() {
@@ -902,22 +903,44 @@ class DiarySidebarView extends ItemView {
     const cache = this.statsService.getCache();
     if (!cache?.years?.length) return;
 
+    const years = cache.years;
+    if (!this.selectedYear || !years.includes(this.selectedYear)) {
+      this.selectedYear = years[0];
+    }
+
     const panel = div(parent, "diary-panel diary-panel-d");
-    const title = div(panel, "diary-section-title diary-section-toggleable");
-    span(title, "", "年度统计");
-    const arrow = span(title, "diary-arrow", this.yearlyStatsOpen ? "▼" : "▶");
+    const header = div(panel, "diary-yearly-header");
+
+    const left = div(header, "diary-yearly-left");
+    const titleEl = span(left, "diary-section-title diary-yearly-title-text", "");
+    const totalEl = span(left, "diary-year-total", "");
+    span(left, "diary-year-streak", "");
+
+    const dropdownEl = div(header, "diary-year-dropdown");
+    const dropdown = new DropdownComponent(dropdownEl);
+    for (const y of years) dropdown.addOption(String(y), `${y} 年`);
+    dropdown.setValue(String(this.selectedYear));
+
     const content = div(panel, "diary-yearly-content");
-    content.classList.toggle("diary-hidden", !this.yearlyStatsOpen);
 
-    if (this.yearlyStatsOpen) this.renderYearlyContent(content, cache.years);
+    const updateHeader = (year) => {
+      const stats = this.statsService.getYearStats(year);
+      titleEl.setText(`${year} 年写作热力图`);
+      totalEl.setText(`${stats.totalEntries} 篇`);
+      left.querySelector(".diary-year-streak").setText(`最长连续 ${stats.longestStreak} 天`);
+    };
 
-    title.addEventListener("click", () => {
-      this.yearlyStatsOpen = !this.yearlyStatsOpen;
-      content.classList.toggle("diary-hidden", !this.yearlyStatsOpen);
-      arrow.setText(this.yearlyStatsOpen ? "▼" : "▶");
-      if (this.yearlyStatsOpen && content.childElementCount === 0) {
-        this.renderYearlyContent(content, cache.years);
-      }
+    const renderSelected = () => {
+      updateHeader(this.selectedYear);
+      content.empty();
+      this.renderYearlyContent(content, [this.selectedYear]);
+    };
+
+    renderSelected();
+
+    dropdown.onChange((val) => {
+      this.selectedYear = Number(val);
+      renderSelected();
     });
   }
 
@@ -925,10 +948,6 @@ class DiarySidebarView extends ItemView {
     for (const year of years) {
       const stats = this.statsService.getYearStats(year);
       const section = div(parent, "diary-year-section");
-      const header = div(section, "diary-year-header");
-      span(header, "diary-year-label", `${year} 年`);
-      span(header, "diary-year-total", `${stats.totalEntries} 篇`);
-      span(header, "diary-year-streak", `最长连续 ${stats.longestStreak} 天`);
       this.renderHeatmap(section, year, stats.writtenDates);
       this.renderMonthBars(section, stats);
       this.renderTagCloud(section, stats);
@@ -937,26 +956,29 @@ class DiarySidebarView extends ItemView {
 
   renderHeatmap(parent, year, writtenDates) {
     const wrap = div(parent, "diary-heatmap-wrap");
-    div(wrap, "diary-heatmap-label", `${year} 年写作热力图`);
-    const grid = div(wrap, "diary-heatmap-grid");
-    const days = this.statsService.isLeapYear(year) ? 366 : 365;
-    const start = new Date(year, 0, 1);
-    const offset = mondayWeekIndex(start);
+    const monthsGrid = div(wrap, "diary-heatmap-months-grid");
 
-    for (let i = 0; i < offset; i++) div(grid, "diary-hm-cell diary-hm-empty");
-    for (let i = 0; i < days; i++) {
-      const cursor = new Date(start);
-      cursor.setDate(start.getDate() + i);
-      const key = dateKey(cursor.getFullYear(), cursor.getMonth() + 1, cursor.getDate());
-      const written = writtenDates.has(key);
-      const today = new Date();
-      const isToday = key === dateKey(today.getFullYear(), today.getMonth() + 1, today.getDate());
-      const cell = div(grid, `diary-hm-cell${written ? " diary-hm-written" : ""}${isToday ? " diary-hm-today" : ""}`);
-      cell.title = `${cursor.getMonth() + 1}月${cursor.getDate()}日${written ? " 已写" : ""}`;
+    const today = new Date();
+    const todayKey = dateKey(today.getFullYear(), today.getMonth() + 1, today.getDate());
+
+    for (let m = 1; m <= 12; m++) {
+      const block = div(monthsGrid, "diary-hm-month-block");
+      div(block, "diary-hm-month-label", `${m}月`);
+      const grid = div(block, "diary-hm-month-grid");
+
+      const start = new Date(year, m - 1, 1);
+      const daysInMonth = new Date(year, m, 0).getDate();
+      const offset = mondayWeekIndex(start);
+
+      for (let i = 0; i < offset; i++) div(grid, "diary-hm-cell diary-hm-empty");
+      for (let d = 1; d <= daysInMonth; d++) {
+        const key = dateKey(year, m, d);
+        const written = writtenDates.has(key);
+        const isToday = key === todayKey;
+        const cell = div(grid, `diary-hm-cell${written ? " diary-hm-written" : ""}${isToday ? " diary-hm-today" : ""}`);
+        cell.title = `${m}月${d}日${written ? " 已写" : ""}`;
+      }
     }
-
-    const months = div(wrap, "diary-heatmap-months");
-    for (let i = 1; i <= 12; i++) span(months, "diary-hm-month", `${i}月`);
   }
 
   renderMonthBars(parent, stats) {
