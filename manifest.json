@@ -1,0 +1,10 @@
+{
+  "id": "diary-plugin",
+  "name": "日记管理",
+  "version": "1.2.0",
+  "minAppVersion": "1.0.0",
+  "description": "中文日记管理侧栏：今日状态、月历、最近日记、标签浏览、历史回顾和年度统计",
+  "author": "Alan",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}
