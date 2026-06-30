@@ -135,15 +135,14 @@
   margin-bottom: 8px;
 }
 
-.diary-select {
+.diary-cal-dropdown {
   flex: 1;
-  padding: 3px 6px;
+  min-width: 0;
+}
+
+.diary-cal-dropdown select {
+  width: 100%;
   font-size: 12px;
-  border-radius: 4px;
-  border: 1px solid var(--background-modifier-border);
-  background: var(--background-primary);
-  color: var(--text-normal);
-  cursor: pointer;
 }
 
 .diary-cal-header {
@@ -400,10 +399,12 @@
 .diary-panel-c-header .diary-section-title {
   margin-bottom: 0;
 }
-.diary-tag-filter {
+.diary-tag-filter-dropdown {
+  flex-shrink: 0;
+}
+.diary-tag-filter-dropdown select {
   font-size: 11px;
-  padding: 2px 4px;
-  max-width: 90px;
+  max-width: 128px;
 }
 
 /* ── 字数统计 ─────────────────────────────────────────────────── */
@@ -665,12 +666,6 @@
   width: 46px !important;
 }
 
-/* tag 筛选下拉居中 */
-.diary-tag-filter {
-  text-align: center;
-  text-align-last: center;
-}
-
 /* ── Tag 浏览器（下拉版） ─────────────────────────────────────── */
 .diary-panel-c-header {
   display: flex;
@@ -766,7 +761,7 @@
 
 .diary-btn,
 .diary-cal-arrow,
-.diary-select {
+.diary-cal-dropdown select {
   min-height: 28px;
 }
 
@@ -812,10 +807,6 @@
   flex: 1;
 }
 
-.diary-tag-filter {
-  max-width: 128px;
-}
-
 .diary-tagbrowser-timeline {
   max-height: 340px;
   background: var(--background-primary);
@@ -847,6 +838,8 @@
 }
 
 .diary-yearly-title-text {
+  display: inline;
+  margin-bottom: 0;
   font-weight: 700;
   font-size: 14px;
   color: var(--text-normal);
@@ -914,4 +907,14 @@
   justify-content: flex-end;
   gap: 8px;
   margin-top: 16px;
+}
+
+/* ── 设置面板：颜色预览色块 ───────────────────────────────────── */
+.diary-color-swatch {
+  width: 18px;
+  height: 18px;
+  margin-left: 8px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
 }

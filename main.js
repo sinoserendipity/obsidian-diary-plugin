@@ -56,17 +56,6 @@ function button(parent, className, text) {
   return el;
 }
 
-function select(parent, className) {
-  return parent.createEl("select", { cls: className });
-}
-
-function option(parent, value, text, selected = false) {
-  const el = parent.createEl("option", { text });
-  el.value = value;
-  el.selected = selected;
-  return el;
-}
-
 function dateKey(year, month, day) {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
@@ -124,6 +113,21 @@ function patternToRegex(pattern) {
   regex += escapeRegExp(pattern.slice(cursor));
   regex += "(?:_(\\d+))?$";
   return { regex: new RegExp(regex), groups };
+}
+
+function buildDirPathFor(settings, date) {
+  let path = (settings.diaryRoot || DEFAULT_SETTINGS.diaryRoot).trim() || DEFAULT_SETTINGS.diaryRoot;
+  if (settings.hasYearFolder) path += `/${date.getFullYear()}`;
+  if (settings.hasMonthFolder) {
+    path += `/${formatDatePattern(settings.monthFolderFormat || "M月", date)}`;
+  }
+  return normalizePath(path);
+}
+
+function buildDiaryPathFor(settings, date, suffixNumber) {
+  const fileName = formatDatePattern(settings.fileNameFormat || DEFAULT_SETTINGS.fileNameFormat, date);
+  const suffix = suffixNumber ? `_${suffixNumber}` : "";
+  return normalizePath(`${buildDirPathFor(settings, date)}/${fileName}${suffix}.md`);
 }
 
 class MonthCalendar {
@@ -220,18 +224,11 @@ class DiaryStatsService {
   }
 
   buildDirPath(date) {
-    let path = this.settings.diaryRoot.trim() || DEFAULT_SETTINGS.diaryRoot;
-    if (this.settings.hasYearFolder) path += `/${date.getFullYear()}`;
-    if (this.settings.hasMonthFolder) {
-      path += `/${formatDatePattern(this.settings.monthFolderFormat || "M月", date)}`;
-    }
-    return normalizePath(path);
+    return buildDirPathFor(this.settings, date);
   }
 
   buildDiaryPath(date, suffixNumber) {
-    const fileName = formatDatePattern(this.settings.fileNameFormat || DEFAULT_SETTINGS.fileNameFormat, date);
-    const suffix = suffixNumber ? `_${suffixNumber}` : "";
-    return normalizePath(`${this.buildDirPath(date)}/${fileName}${suffix}.md`);
+    return buildDiaryPathFor(this.settings, date, suffixNumber);
   }
 
   parseDiaryPath(file) {
@@ -713,14 +710,22 @@ class DiarySidebarView extends ItemView {
   renderCalendar(parent) {
     const panel = div(parent, "diary-panel diary-panel-b");
     const cache = this.statsService.getCache();
-    const years = cache?.years?.length ? cache.years : [new Date().getFullYear()];
+    const cacheYears = cache?.years?.length ? cache.years : [new Date().getFullYear()];
+    const years = cacheYears.includes(this.currentYear) ? cacheYears : [...cacheYears, this.currentYear];
     const controls = div(panel, "diary-cal-controls");
     const prev = button(controls, "diary-cal-arrow", "‹");
     prev.title = "上个月";
-    const yearSelect = select(controls, "diary-select");
-    for (const year of years) option(yearSelect, String(year), String(year), year === this.currentYear);
-    const monthSelect = select(controls, "diary-select");
-    for (let month = 1; month <= 12; month++) option(monthSelect, String(month), `${month}月`, month === this.currentMonth);
+
+    const yearDropdownEl = div(controls, "diary-cal-dropdown");
+    const yearDropdown = new DropdownComponent(yearDropdownEl);
+    for (const year of years) yearDropdown.addOption(String(year), String(year));
+    yearDropdown.setValue(String(this.currentYear));
+
+    const monthDropdownEl = div(controls, "diary-cal-dropdown");
+    const monthDropdown = new DropdownComponent(monthDropdownEl);
+    for (let month = 1; month <= 12; month++) monthDropdown.addOption(String(month), `${month}月`);
+    monthDropdown.setValue(String(this.currentMonth));
+
     const next = button(controls, "diary-cal-arrow", "›");
     next.title = "下个月";
     const todayBtn = button(controls, "diary-cal-arrow diary-cal-today-btn", "今天");
@@ -729,11 +734,11 @@ class DiarySidebarView extends ItemView {
     const calendar = div(panel, "diary-cal-container");
 
     const syncSelects = () => {
-      if (!yearSelect.querySelector(`option[value="${this.currentYear}"]`)) {
-        option(yearSelect, String(this.currentYear), String(this.currentYear));
+      if (!yearDropdown.selectEl.querySelector(`option[value="${this.currentYear}"]`)) {
+        yearDropdown.addOption(String(this.currentYear), String(this.currentYear));
       }
-      yearSelect.value = String(this.currentYear);
-      monthSelect.value = String(this.currentMonth);
+      yearDropdown.setValue(String(this.currentYear));
+      monthDropdown.setValue(String(this.currentMonth));
     };
 
     const moveMonth = (delta) => {
@@ -759,12 +764,12 @@ class DiarySidebarView extends ItemView {
       syncSelects();
       this.updateCalendar(calendar);
     });
-    yearSelect.addEventListener("change", () => {
-      this.currentYear = Number(yearSelect.value);
+    yearDropdown.onChange((val) => {
+      this.currentYear = Number(val);
       this.updateCalendar(calendar);
     });
-    monthSelect.addEventListener("change", () => {
-      this.currentMonth = Number(monthSelect.value);
+    monthDropdown.onChange((val) => {
+      this.currentMonth = Number(val);
       this.updateCalendar(calendar);
     });
     this.updateCalendar(calendar);
@@ -799,14 +804,14 @@ class DiarySidebarView extends ItemView {
       return;
     }
 
-    const tagSelect = select(header, "diary-select diary-tag-filter");
-    option(tagSelect, "", "选择标签...");
-    for (const { tag, count } of tags) option(tagSelect, tag, `# ${tag} (${count})`);
+    const dropdownEl = div(header, "diary-tag-filter-dropdown");
+    const tagDropdown = new DropdownComponent(dropdownEl);
+    tagDropdown.addOption("", "选择标签...");
+    for (const { tag, count } of tags) tagDropdown.addOption(tag, `# ${tag} (${count})`);
 
     const stats = div(panel, "diary-tagbrowser-stats diary-hidden");
     const timeline = div(panel, "diary-tagbrowser-timeline");
-    tagSelect.addEventListener("change", async () => {
-      const tag = tagSelect.value;
+    tagDropdown.onChange(async (tag) => {
       timeline.empty();
       stats.empty();
       if (!tag) {
@@ -1066,6 +1071,15 @@ class DiarySettingTab extends PluginSettingTab {
     containerEl.empty();
     containerEl.createEl("h2", { text: "日记管理 · 设置" });
 
+    const draft = {
+      templatePath: this.plugin.settings.templatePath,
+      diaryRoot: this.plugin.settings.diaryRoot,
+      hasYearFolder: this.plugin.settings.hasYearFolder,
+      hasMonthFolder: this.plugin.settings.hasMonthFolder,
+      monthFolderFormat: this.plugin.settings.monthFolderFormat,
+      fileNameFormat: this.plugin.settings.fileNameFormat,
+    };
+
     const preview = document.createElement("div");
 
     containerEl.createEl("h3", { text: "模板" });
@@ -1075,10 +1089,9 @@ class DiarySettingTab extends PluginSettingTab {
       .addText((text) =>
         text
           .setPlaceholder(DEFAULT_SETTINGS.templatePath)
-          .setValue(this.plugin.settings.templatePath)
-          .onChange(async (value) => {
-            this.plugin.settings.templatePath = value.trim();
-            await this.plugin.saveSettings();
+          .setValue(draft.templatePath)
+          .onChange((value) => {
+            draft.templatePath = value.trim();
           })
       );
 
@@ -1089,11 +1102,10 @@ class DiarySettingTab extends PluginSettingTab {
       .addText((text) =>
         text
           .setPlaceholder(DEFAULT_SETTINGS.diaryRoot)
-          .setValue(this.plugin.settings.diaryRoot)
-          .onChange(async (value) => {
-            this.plugin.settings.diaryRoot = value.trim() || DEFAULT_SETTINGS.diaryRoot;
-            this.updatePreview(preview);
-            await this.plugin.saveAndApply();
+          .setValue(draft.diaryRoot)
+          .onChange((value) => {
+            draft.diaryRoot = value.trim() || DEFAULT_SETTINGS.diaryRoot;
+            this.updatePreview(preview, draft);
           })
       );
 
@@ -1101,10 +1113,9 @@ class DiarySettingTab extends PluginSettingTab {
       .setName("按年份建立子目录")
       .setDesc("例如：日记/2026/")
       .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.hasYearFolder).onChange(async (value) => {
-          this.plugin.settings.hasYearFolder = value;
-          this.updatePreview(preview);
-          await this.plugin.saveAndApply();
+        toggle.setValue(draft.hasYearFolder).onChange((value) => {
+          draft.hasYearFolder = value;
+          this.updatePreview(preview, draft);
         })
       );
 
@@ -1112,10 +1123,9 @@ class DiarySettingTab extends PluginSettingTab {
       .setName("按月份建立子目录")
       .setDesc("例如：日记/2026/6月/")
       .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.hasMonthFolder).onChange(async (value) => {
-          this.plugin.settings.hasMonthFolder = value;
-          this.updatePreview(preview);
-          await this.plugin.saveAndApply();
+        toggle.setValue(draft.hasMonthFolder).onChange((value) => {
+          draft.hasMonthFolder = value;
+          this.updatePreview(preview, draft);
         })
       );
 
@@ -1125,11 +1135,10 @@ class DiarySettingTab extends PluginSettingTab {
       .addText((text) =>
         text
           .setPlaceholder(DEFAULT_SETTINGS.monthFolderFormat)
-          .setValue(this.plugin.settings.monthFolderFormat)
-          .onChange(async (value) => {
-            this.plugin.settings.monthFolderFormat = value.trim() || DEFAULT_SETTINGS.monthFolderFormat;
-            this.updatePreview(preview);
-            await this.plugin.saveAndApply();
+          .setValue(draft.monthFolderFormat)
+          .onChange((value) => {
+            draft.monthFolderFormat = value.trim() || DEFAULT_SETTINGS.monthFolderFormat;
+            this.updatePreview(preview, draft);
           })
       );
 
@@ -1140,16 +1149,35 @@ class DiarySettingTab extends PluginSettingTab {
       .addText((text) =>
         text
           .setPlaceholder(DEFAULT_SETTINGS.fileNameFormat)
-          .setValue(this.plugin.settings.fileNameFormat)
-          .onChange(async (value) => {
-            this.plugin.settings.fileNameFormat = value.trim() || DEFAULT_SETTINGS.fileNameFormat;
-            this.updatePreview(preview);
-            await this.plugin.saveAndApply();
+          .setValue(draft.fileNameFormat)
+          .onChange((value) => {
+            draft.fileNameFormat = value.trim() || DEFAULT_SETTINGS.fileNameFormat;
+            this.updatePreview(preview, draft);
           })
       );
 
     containerEl.appendChild(preview);
-    this.updatePreview(preview);
+    this.updatePreview(preview, draft);
+
+    new Setting(containerEl)
+      .setName("保存并应用")
+      .setDesc("点击后才会保存以上模板/目录/文件名设置，并重新扫描日记；不点击则以上改动不会生效。")
+      .addButton((buttonEl) =>
+        buttonEl
+          .setButtonText("保存并应用")
+          .setCta()
+          .onClick(async () => {
+            buttonEl.setButtonText("应用中...");
+            buttonEl.setDisabled(true);
+            Object.assign(this.plugin.settings, draft);
+            await this.plugin.saveAndApply();
+            buttonEl.setButtonText("已应用 ✓");
+            window.setTimeout(() => {
+              buttonEl.setButtonText("保存并应用");
+              buttonEl.setDisabled(false);
+            }, 1600);
+          })
+      );
 
     containerEl.createEl("h3", { text: "界面" });
     new Setting(containerEl)
@@ -1182,27 +1210,35 @@ class DiarySettingTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
+    const heatmapSetting = new Setting(containerEl)
       .setName("热力点颜色")
-      .setDesc("年度热力图中已写日记点的颜色。")
-      .addDropdown((dropdown) => {
-        this.addColorOptions(dropdown);
-        dropdown.setValue(this.plugin.settings.heatmapColor).onChange(async (value) => {
-          this.plugin.settings.heatmapColor = value;
-          await this.plugin.saveAndRender();
-        });
+      .setDesc("年度热力图中已写日记点的颜色。");
+    let heatmapSwatch;
+    heatmapSetting.addDropdown((dropdown) => {
+      this.addColorOptions(dropdown);
+      dropdown.setValue(this.plugin.settings.heatmapColor).onChange(async (value) => {
+        this.plugin.settings.heatmapColor = value;
+        heatmapSwatch.style.background = COLOR_OPTIONS[value]?.value || "";
+        await this.plugin.saveAndRender();
       });
+    });
+    heatmapSwatch = heatmapSetting.controlEl.createDiv({ cls: "diary-color-swatch" });
+    heatmapSwatch.style.background = COLOR_OPTIONS[this.plugin.settings.heatmapColor]?.value || "";
 
-    new Setting(containerEl)
+    const barSetting = new Setting(containerEl)
       .setName("月份柱状图颜色")
-      .setDesc("年度统计中月份柱状图的统一颜色。")
-      .addDropdown((dropdown) => {
-        this.addColorOptions(dropdown);
-        dropdown.setValue(this.plugin.settings.barColor).onChange(async (value) => {
-          this.plugin.settings.barColor = value;
-          await this.plugin.saveAndRender();
-        });
+      .setDesc("年度统计中月份柱状图的统一颜色。");
+    let barSwatch;
+    barSetting.addDropdown((dropdown) => {
+      this.addColorOptions(dropdown);
+      dropdown.setValue(this.plugin.settings.barColor).onChange(async (value) => {
+        this.plugin.settings.barColor = value;
+        barSwatch.style.background = COLOR_OPTIONS[value]?.value || "";
+        await this.plugin.saveAndRender();
       });
+    });
+    barSwatch = barSetting.controlEl.createDiv({ cls: "diary-color-swatch" });
+    barSwatch.style.background = COLOR_OPTIONS[this.plugin.settings.barColor]?.value || "";
 
     containerEl.createEl("h3", { text: "工具" });
     new Setting(containerEl)
@@ -1228,9 +1264,9 @@ class DiarySettingTab extends PluginSettingTab {
     }
   }
 
-  updatePreview(container) {
+  updatePreview(container, draft) {
     try {
-      container.setText(`预览路径：${this.plugin.statsService.buildDiaryPath(new Date())}`);
+      container.setText(`预览路径：${buildDiaryPathFor(draft, new Date())}`);
       container.style.color = "var(--text-muted)";
       container.style.fontSize = "12px";
       container.style.marginTop = "8px";
